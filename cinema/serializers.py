@@ -127,12 +127,14 @@ class OrderSerializer(serializers.ModelSerializer):
 
         seen_seats = set()
         for ticket in tickets_data:
-            key = (ticket["trip"].id, ticket["seat"])
+            seat = ticket["seat"]
+            trip = ticket["trip"]
+            key = (trip.id, seat)
 
             if key in seen_seats:
                 raise serializers.ValidationError(
-                    f"Місце {ticket["seat"]} для поїздки "
-                    f"{ticket["trip"].id} дублюється в одному замовленні."
+                    f"Місце {seat} для поїздки {trip.id} "
+                    f"дублюється в одному замовленні."
                 )
             seen_seats.add(key)
 
@@ -141,8 +143,7 @@ class OrderSerializer(serializers.ModelSerializer):
                     seat=ticket["seat"]
             ).exists():
                 raise serializers.ValidationError(
-                    f"Місце {ticket["seat"]} для поїздки "
-                    f"{ticket["trip"].id} вже зайняте."
+                    f"Місце {seat} для поїздки {trip.id} вже зайняте."
                 )
 
         with transaction.atomic():
