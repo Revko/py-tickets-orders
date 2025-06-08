@@ -1,3 +1,4 @@
+from django.db import transaction
 from rest_framework import serializers
 
 from cinema.models import (
@@ -115,24 +116,37 @@ class TicketCreateSerializer(serializers.ModelSerializer):
 
 
 class OrderSerializer(serializers.ModelSerializer):
-    tickets = TicketSerializer(many=True, read_only=True)
+    tickets = TicketSerializer(many=True, read_only=False, allow_empty=False)
 
     class Meta:
         model = Order
-        fields = ("id", "tickets", "created_at")
-
-
-class OrderCreateSerializer(serializers.ModelSerializer):
-    tickets = TicketCreateSerializer(many=True)
-
-    class Meta:
-        model = Order
-        fields = ("tickets",)
+        fields = ("id", "created_at", "tickets")
 
     def create(self, validated_data):
         tickets_data = validated_data.pop("tickets")
-        user = self.context["request"].user
-        order = Order.objects.create(user=user)
-        for ticket_data in tickets_data:
-            Ticket.objects.create(order=order, **ticket_data)
-        return order
+
+        seen_seats = set()
+        for ticket in tickets_data:
+            key = (ticket["trip"].id, ticket["seat"])
+
+            if key in seen_seats:
+                raise serializers.ValidationError(
+                    f"Місце {ticket["seat"]} для поїздки "
+                    f"{ticket["trip"].id} дублюється в одному замовленні."
+                )
+            seen_seats.add(key)
+
+            if Ticket.objects.filter(
+                    trip=ticket["trip"],
+                    seat=ticket["seat"]
+            ).exists():
+                raise serializers.ValidationError(
+                    f"Місце {ticket["seat"]} для поїздки "
+                    f"{ticket["trip"].id} вже зайняте."
+                )
+
+        with transaction.atomic():
+            order = Order.objects.create(**validated_data)
+            for ticket_data in tickets_data:
+                Ticket.objects.create(order=order, **ticket_data)
+            return order
